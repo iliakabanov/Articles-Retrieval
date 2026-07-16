@@ -71,6 +71,8 @@ def main():
                     help="параметр ретривера key=value (можно повторять)")
     ap.add_argument("--worst", type=int, default=8,
                     help="сколько худших запросов показать (0 — не показывать)")
+    ap.add_argument("--progress", action="store_true",
+                    help="показывать прогресс-бар (для dense/rerank)")
     ap.add_argument("--list", action="store_true", help="показать доступные алгоритмы")
     args = ap.parse_args()
 
@@ -89,6 +91,15 @@ def main():
 
     # ретривер по имени -> fit -> rank
     Retriever = get_retriever(args.algo)
+
+    # --progress прокидываем только тем ретриверам, чей конструктор его принимает
+    if args.progress:
+        import inspect
+        if "progress" in inspect.signature(Retriever.__init__).parameters:
+            params.setdefault("progress", True)
+        else:
+            print(f"(--progress не поддерживается алгоритмом '{args.algo}', игнорирую)")
+
     t0 = time.perf_counter()
     retriever = Retriever(**params).fit(articles)
     preds = retriever.rank(calibration, k=args.k)

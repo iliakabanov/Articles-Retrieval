@@ -35,12 +35,14 @@ class Retriever(BaseRetriever):
     # дефолт — ru-en-RoSBERTa: на calibration лучше e5-large (MAP 0.446 vs 0.422)
     def __init__(self, model: str = "ai-forever/ru-en-RoSBERTa",
                  chunk_words: int = 200, overlap: int = 40,
-                 batch_size: int = 64, device: str = None):
+                 batch_size: int = 64, device: str = None,
+                 progress: bool = False):
         self.model_name = model
         self.chunk_words = int(chunk_words)
         self.overlap = int(overlap)
         self.batch_size = int(batch_size)
         self.device = device
+        self.progress = bool(progress)
         pre = MODEL_PRESETS.get(model, {"query": "", "passage": ""})
         self.q_prefix, self.p_prefix = pre["query"], pre["passage"]
 
@@ -73,7 +75,7 @@ class Retriever(BaseRetriever):
         self._model = model
         emb = model.encode(texts, batch_size=self.batch_size,
                            normalize_embeddings=True, convert_to_numpy=True,
-                           show_progress_bar=False)
+                           show_progress_bar=self.progress)
         return emb.astype(np.float32)
 
     # ------------------------------------------------------------------ индекс
