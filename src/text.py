@@ -34,6 +34,20 @@ RU_STOPWORDS = set("""
 """.split())
 
 
+_WS_RE = re.compile(r"\s+")
+
+
+def clean_text(text: str) -> str:
+    """Лёгкая очистка для dense-моделей: убрать маск-токены, схлопнуть пробелы.
+
+    В отличие от tokenize() НЕ трогаем регистр, пунктуацию, стоп-слова — трансформерам
+    нужен естественный текст.
+    """
+    if not isinstance(text, str):
+        return ""
+    return _WS_RE.sub(" ", _MASK_RE.sub(" ", text)).strip()
+
+
 @lru_cache(maxsize=1)
 def _get_stemmer():
     """Ленивая инициализация Snowball-стеммера (нужен только при stem=True)."""
