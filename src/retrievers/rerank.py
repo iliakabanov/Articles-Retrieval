@@ -31,7 +31,7 @@ class Retriever(BaseRetriever):
                  max_doc_chars: int = 2000, device: str = None,
                  progress: bool = False,
                  blend: bool = True, w_base: float = 1.0, w_rerank: float = 0.3,
-                 k_blend: int = 10):
+                 k_blend: int = 5):
         self.model_name = model
         self.top_n = int(top_n)
         self.max_length = int(max_length)
@@ -64,9 +64,26 @@ class Retriever(BaseRetriever):
         }
         return self
 
+    def _free_base_gpu(self):
+        """Освобождает VRAM dense-моделей базы: после отбора кандидатов они не нужны,
+        а reranker тяжёлый — иначе на 8 ГБ GPU три модели сразу дают OOM."""
+        try:
+            import gc
+            import torch
+            for d in getattr(self.base, "dense_list", []):
+                d._model = None
+            if getattr(self.base, "_model", None) is not None:
+                self.base._model = None
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except Exception:
+            pass
+
     def rank(self, queries: pd.DataFrame, k: int = K) -> Dict[int, List[int]]:
         # 1) быстрый отбор кандидатов базовым ретривером
         candidates = self.base.rank(queries, k=self.top_n)
+        self._free_base_gpu()          # освобождаем VRAM под тяжёлый cross-encoder
 
         # 2) собираем ВСЕ пары (запрос, статья) в один батч для cross-encoder'а
         q2text = {int(q): clean_text(t)
