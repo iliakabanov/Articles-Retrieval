@@ -94,6 +94,7 @@ class Retriever(BaseRetriever):
             seg_starts.append(len(chunk_texts))
             chunk_texts.extend(self._chunks(title, body))
         self.seg_starts = np.asarray(seg_starts)
+        self.chunk_texts = chunk_texts          # тексты чанков (для реранка по чанку)
         n_chunks = len(chunk_texts)
 
         # кеш эмбеддингов на диск (воспроизводимо и быстро при повторе)
@@ -106,6 +107,26 @@ class Retriever(BaseRetriever):
             EMB_CACHE.mkdir(parents=True, exist_ok=True)
             np.save(cache, self.chunk_emb)
         return self
+
+    def best_chunk_texts(self, queries: pd.DataFrame, candidates: Dict[int, List[int]]) -> dict:
+        """{(query_id, article_id): текст лучшего по близости чанка статьи}.
+
+        Для реранка по чанку: вместо «головы» статьи cross-encoder получает тот
+        пассаж, что дал max при dense-поиске (наиболее релевантный запросу).
+        """
+        q_emb = self._encode([self.q_prefix + clean_text(t) for t in queries["query_text"]])
+        aid2idx = {int(a): i for i, a in enumerate(self.article_ids)}
+        n_chunks = len(self.chunk_texts)
+        out = {}
+        for row, qid in enumerate(queries["query_id"].astype(int)):
+            qv = q_emb[row]
+            for aid in candidates.get(qid, []):
+                i = aid2idx[aid]
+                s = int(self.seg_starts[i])
+                e = int(self.seg_starts[i + 1]) if i + 1 < len(self.seg_starts) else n_chunks
+                best = s + int(np.argmax(self.chunk_emb[s:e] @ qv))
+                out[(qid, aid)] = self.chunk_texts[best]
+        return out
 
     # ------------------------------------------------------------------ поиск
     def rank(self, queries: pd.DataFrame, k: int = K) -> Dict[int, List[int]]:

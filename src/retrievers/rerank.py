@@ -27,13 +27,16 @@ class Retriever(BaseRetriever):
     name = "rerank"
 
     def __init__(self, model: str = "BAAI/bge-reranker-v2-m3", base: str = "hybrid",
-                 top_n: int = 30, max_length: int = 512, batch_size: int = 32,
+                 top_n: int = 20, max_length: int = 512, batch_size: int = 32,
                  max_doc_chars: int = 2000, device: str = None,
                  progress: bool = False,
-                 blend: bool = True, w_base: float = 1.0, w_rerank: float = 0.3,
-                 k_blend: int = 5):
+                 blend: bool = True, w_base: float = 1.0, w_rerank: float = 0.75,
+                 k_blend: int = 5, best_chunk: bool = True):
         self.model_name = model
         self.top_n = int(top_n)
+        # best_chunk: подавать cross-encoder'у лучший dense-чанк статьи, а не «голову»
+        # (длинные статьи иначе усекаются до первых ~512 токенов, релевантный кусок теряется)
+        self.best_chunk = bool(best_chunk)
         self.max_length = int(max_length)
         self.batch_size = int(batch_size)
         self.max_doc_chars = int(max_doc_chars)
@@ -83,6 +86,13 @@ class Retriever(BaseRetriever):
     def rank(self, queries: pd.DataFrame, k: int = K) -> Dict[int, List[int]]:
         # 1) быстрый отбор кандидатов базовым ретривером
         candidates = self.base.rank(queries, k=self.top_n)
+
+        # (опц.) текст документа для reranker'а = лучший dense-чанк, а не «голова».
+        # Считаем ДО освобождения GPU — нужна dense-модель базы (RoSBERTa) для запросов.
+        pair_text = None
+        if self.best_chunk and getattr(self.base, "dense_list", None):
+            pair_text = self.base.dense_list[0].best_chunk_texts(queries, candidates)
+
         self._free_base_gpu()          # освобождаем VRAM под тяжёлый cross-encoder
 
         # 2) собираем ВСЕ пары (запрос, статья) в один батч для cross-encoder'а
@@ -91,7 +101,9 @@ class Retriever(BaseRetriever):
         pairs, index = [], []
         for qid in queries["query_id"].astype(int):
             for doc in candidates.get(qid, []):
-                pairs.append((q2text[qid], self.id2text.get(doc, "")))
+                doc_text = (pair_text.get((qid, doc)) if pair_text is not None
+                            else None) or self.id2text.get(doc, "")
+                pairs.append((q2text[qid], doc_text))
                 index.append((qid, doc))
 
         model = getattr(self, "_model", None) or self._load_model()
