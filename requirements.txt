@@ -1,0 +1,23 @@
+# Python 3.11+ (тестировалось на 3.11, conda-окружение torch_env)
+#
+# ВНИМАНИЕ: torch ставится отдельно под вашу CUDA. Для CUDA 12.x:
+#   pip install torch==2.11.0 --index-url https://download.pytorch.org/whl/cu128
+# CPU-версия (медленно, но воспроизводит):
+#   pip install torch==2.11.0
+#
+# Затем остальное:
+sentence-transformers==2.6.1
+transformers==4.57.6
+peft==0.19.1
+accelerate==1.13.0
+huggingface-hub==0.36.2
+
+scikit-learn==1.8.0
+pandas==2.2.2
+pyarrow==23.0.1
+numpy==1.26.4
+scipy==1.14.1
+
+beautifulsoup4==4.14.3
+lxml==6.0.2
+snowballstemmer          # опционально (нужен только при BM25 stem=True; по умолчанию выкл.)

@@ -39,6 +39,7 @@ def main():
     ap.add_argument("--max_seq", type=int, default=256)
     ap.add_argument("--neg", type=int, default=1, help="hard negatives на пару")
     ap.add_argument("--n_test", type=int, default=100)
+    ap.add_argument("--full", action="store_true", help="учить на ВСЕХ 500 (финал, без held-out)")
     ap.add_argument("--out", default=None)
     args = ap.parse_args()
 
@@ -51,6 +52,8 @@ def main():
     SEED = 42
     random.seed(SEED); np.random.seed(SEED)
     torch.manual_seed(SEED); torch.cuda.manual_seed_all(SEED)
+    torch.backends.cudnn.deterministic = True     # детерминизм cuDNN
+    torch.backends.cudnn.benchmark = False
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     pre = resolve_prefixes(args.model)
@@ -66,23 +69,27 @@ def main():
 
     cal = load_calibration()
     truth = build_truth(cal)
-    dev, test = split_calibration(cal, n_test=args.n_test, seed=SEED)
-    print(f"dev: {len(dev)} | test: {len(test)} | модель: {args.model}")
+    if args.full:                           # финал: учим на ВСЕХ 500, held-out нет
+        train_df, test = cal, None
+        print(f"train (ВСЕ): {len(train_df)} | модель: {args.model}")
+    else:
+        train_df, test = split_calibration(cal, n_test=args.n_test, seed=SEED)
+        print(f"dev: {len(train_df)} | test: {len(test)} | модель: {args.model}")
 
     # hard negatives через BM25 (с фильтром дубликатов правильных статей)
     bm25 = BM25().fit(arts)
-    dev_ranked = bm25.rank(dev, k=15)
+    tr_ranked = bm25.rank(train_df, k=15)
     examples = []
-    for _, r in dev.iterrows():
+    for _, r in train_df.iterrows():
         qid = int(r["query_id"]); gts = truth[qid]
         gt_titles = {id2title[g] for g in gts}; gt_bodies = {id2body[g] for g in gts}
-        negs = [d for d in dev_ranked[qid]
+        negs = [d for d in tr_ranked[qid]
                 if d not in gts and id2title[d] not in gt_titles and id2body[d] not in gt_bodies]
         for g in gts:                       # по паре на каждую правильную статью
             texts = [QP + clean_text(r["query_text"]), PP + doc_text(g)]
             texts += [PP + doc_text(n) for n in negs[:args.neg]]
             examples.append(InputExample(texts=texts))
-    print(f"обучающих пар (из dev): {len(examples)}")
+    print(f"обучающих пар: {len(examples)}")
 
     # ---- модель + LoRA ----
     model = SentenceTransformer(args.model, device=device)
@@ -120,11 +127,14 @@ def main():
             q = model.encode([QP + clean_text(t) for t in df["query_text"]], batch_size=32,
                              normalize_embeddings=True, convert_to_numpy=True, show_progress_bar=False)
             return np.maximum.reduceat(q @ c.T, seg_starts, axis=1)
-        return map_on(dev, scores(dev)), map_on(test, scores(test))
+        tr = map_on(train_df, scores(train_df))
+        va = map_on(test, scores(test)) if test is not None else None
+        return tr, va
 
     # ---- ручной цикл обучения с пер-эпохным логом ----
+    g = torch.Generator(); g.manual_seed(SEED)     # фиксируем порядок shuffle
     loader = DataLoader(examples, shuffle=True, batch_size=args.batch_size,
-                        collate_fn=model.smart_batching_collate)
+                        collate_fn=model.smart_batching_collate, generator=g)
     loss_fn = losses.MultipleNegativesRankingLoss(model)
     opt = torch.optim.AdamW([p for p in model.parameters() if p.requires_grad], lr=args.lr)
     scaler = torch.amp.GradScaler("cuda")
@@ -144,7 +154,8 @@ def main():
             scaler.scale(loss).backward(); scaler.step(opt); scaler.update()
             run += loss.item(); nb += 1
         tr_map, va_map = evaluate()
-        print(f"  {ep:>3} |   {run/nb:8.4f} |    {tr_map:.4f}    |   {va_map:.4f}", flush=True)
+        va_str = f"{va_map:.4f}" if va_map is not None else "  —   "
+        print(f"  {ep:>3} |   {run/nb:8.4f} |    {tr_map:.4f}    |   {va_str}", flush=True)
 
     # ---- сохранить дообученную модель ----
     model[0].auto_model = model[0].auto_model.merge_and_unload()

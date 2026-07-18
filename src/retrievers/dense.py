@@ -26,6 +26,10 @@ MODEL_PRESETS = {
     "intfloat/multilingual-e5-base":  {"query": "query: ", "passage": "passage: "},
     "ai-forever/ru-en-RoSBERTa": {"query": "search_query: ", "passage": "search_document: "},
     "deepvk/USER-bge-m3": {"query": "", "passage": ""},
+    # дообученные модели на HuggingFace (финальное решение) — имена без 'e5'/'rosberta',
+    # поэтому префиксы задаём явно
+    "iliakabanov/multillingual-dense-retriever": {"query": "query: ", "passage": "passage: "},      # e5-large-ft
+    "iliakabanov/russian-dense-retriever": {"query": "search_query: ", "passage": "search_document: "},  # RoSBERTa-ft
 }
 
 
@@ -98,11 +102,17 @@ class Retriever(BaseRetriever):
     # ------------------------------------------------------------------ индекс
     def _cache_path(self, n_chunks: int):
         key = f"{self.model_name}|{self.chunk_words}|{self.overlap}|{n_chunks}"
-        # локальная (дообученная) модель: подмешиваем mtime, чтобы переобучение в тот
-        # же путь инвалидировало кеш чанков (иначе используются устаревшие эмбеддинги)
+        # локальная (дообученная) модель: подмешиваем mtime файла весов/конфига, чтобы
+        # пере-сохранение модели в тот же путь инвалидировало кеш чанков (mtime самого
+        # config.json надёжно меняется при save, в отличие от mtime директории)
         p = Path(self.model_name)
         if p.exists():
-            key += f"|{int(p.stat().st_mtime)}"
+            stamp = p
+            for f in ("config.json", "model.safetensors", "pytorch_model.bin"):
+                if (p / f).exists():
+                    stamp = p / f
+                    break
+            key += f"|{int(stamp.stat().st_mtime)}"
         h = hashlib.md5(key.encode("utf-8")).hexdigest()[:16]
         safe = self.model_name.replace("/", "_")
         return EMB_CACHE / f"{safe}__cw{self.chunk_words}_ov{self.overlap}__{h}.npy"

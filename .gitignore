@@ -1,6 +1,16 @@
-data/
-notebooks/
+# дообученные веса и кеш эмбеддингов — большие, идут на HuggingFace, не в git
 .emb_cache/
+
+# данные задачи (выдаются платформой) — в репозиторий не кладём
+data/
+
+# python
 __pycache__/
-src/__pycache__/
 *.pyc
+
+# ноутбуки: в репозитории только упомянутые в README/SOLUTION; остальные (черновые) — нет
+notebooks/*
+!notebooks/01_eda.ipynb
+!notebooks/02_baseline.ipynb
+!notebooks/03_hybrid_analysis.ipynb
+!notebooks/04_multianswer.ipynb
