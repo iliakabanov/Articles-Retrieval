@@ -91,3 +91,14 @@ def build_truth(calibration: pd.DataFrame) -> Dict[int, Set[int]]:
     """{query_id: {правильные article_id}} — вход для метрики."""
     return {int(q): set(ids)
             for q, ids in zip(calibration["query_id"], calibration["gt_ids"])}
+
+
+def split_calibration(calibration: pd.DataFrame, n_test: int = 100, seed: int = 42):
+    """Детерминированный dev/test-сплит calibration (реальные запросы).
+
+    dev — для подбора гиперпараметров, test — нетронутый финальный замер. Обучение
+    dense-модели идёт на корпусе, так что оба подмножества полностью held-out.
+    """
+    test = calibration.sample(n=n_test, random_state=seed)
+    dev = calibration.drop(test.index)
+    return dev.reset_index(drop=True), test.reset_index(drop=True)

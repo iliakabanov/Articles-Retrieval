@@ -31,7 +31,9 @@ class Retriever(BaseRetriever):
                  max_doc_chars: int = 2000, device: str = None,
                  progress: bool = False,
                  blend: bool = True, w_base: float = 1.0, w_rerank: float = 0.75,
-                 k_blend: int = 5, best_chunk: bool = True):
+                 k_blend: int = 5, best_chunk: bool = True,
+                 dense_models: str = None, w_bm25: float = None,
+                 w_dense: float = None, k_rrf: int = None):
         self.model_name = model
         self.top_n = int(top_n)
         # best_chunk: подавать cross-encoder'у лучший dense-чанк статьи, а не «голову»
@@ -48,7 +50,14 @@ class Retriever(BaseRetriever):
         self.blend = bool(blend)
         self.w_base, self.w_rerank = float(w_base), float(w_rerank)
         self.k_blend = int(k_blend)
-        self.base = get_retriever(base)()      # базовый ретривер-кандидатогенератор
+        # опциональная конфигурация базового гибрида (FT-модели, веса RRF)
+        base_kwargs = {}
+        if base == "hybrid":
+            if dense_models is not None: base_kwargs["dense_models"] = dense_models
+            if w_bm25 is not None: base_kwargs["w_bm25"] = float(w_bm25)
+            if w_dense is not None: base_kwargs["w_dense"] = float(w_dense)
+            if k_rrf is not None: base_kwargs["k_rrf"] = int(k_rrf)
+        self.base = get_retriever(base)(**base_kwargs)   # базовый ретривер-кандидатогенератор
 
     def _load_model(self):
         from sentence_transformers import CrossEncoder

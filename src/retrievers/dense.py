@@ -10,6 +10,7 @@ max косинуса по её чанкам. Эмбеддинги нормали
     "<torch_env>/python.exe" scripts/run_eval.py --algo dense --param model=intfloat/multilingual-e5-large
 """
 import hashlib
+from pathlib import Path
 from typing import Dict, List
 
 import numpy as np
@@ -28,6 +29,22 @@ MODEL_PRESETS = {
 }
 
 
+def resolve_prefixes(model: str) -> dict:
+    """Префиксы модели: точное совпадение из реестра, иначе по подстроке имени/пути.
+
+    Нужно для дообученных моделей, которые задаются путём в кеше (в реестре их нет),
+    но требуют тех же префиксов, что и базовая модель.
+    """
+    if model in MODEL_PRESETS:
+        return MODEL_PRESETS[model]
+    low = model.lower()
+    if "rosberta" in low:
+        return {"query": "search_query: ", "passage": "search_document: "}
+    if "e5" in low:
+        return {"query": "query: ", "passage": "passage: "}
+    return {"query": "", "passage": ""}
+
+
 class Retriever(BaseRetriever):
 
     name = "dense"
@@ -43,7 +60,7 @@ class Retriever(BaseRetriever):
         self.batch_size = int(batch_size)
         self.device = device
         self.progress = bool(progress)
-        pre = MODEL_PRESETS.get(model, {"query": "", "passage": ""})
+        pre = resolve_prefixes(model)
         self.q_prefix, self.p_prefix = pre["query"], pre["passage"]
 
     # ------------------------------------------------------------------ чанкинг
@@ -81,6 +98,11 @@ class Retriever(BaseRetriever):
     # ------------------------------------------------------------------ индекс
     def _cache_path(self, n_chunks: int):
         key = f"{self.model_name}|{self.chunk_words}|{self.overlap}|{n_chunks}"
+        # локальная (дообученная) модель: подмешиваем mtime, чтобы переобучение в тот
+        # же путь инвалидировало кеш чанков (иначе используются устаревшие эмбеддинги)
+        p = Path(self.model_name)
+        if p.exists():
+            key += f"|{int(p.stat().st_mtime)}"
         h = hashlib.md5(key.encode("utf-8")).hexdigest()[:16]
         safe = self.model_name.replace("/", "_")
         return EMB_CACHE / f"{safe}__cw{self.chunk_words}_ov{self.overlap}__{h}.npy"
