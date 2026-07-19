@@ -13,9 +13,9 @@ Retrieval-этап для RAG: по короткому разговорному 
 - **Обработка HTML:** `html_to_text` (`src/data.py`) — убираем script/style, `<img>`
   заменяем его alt-текстом, собираем видимый текст, схлопываем пробелы. Для запросов
   дополнительно вычищаем маск-токены `<MONEY>/<ID>/…`.
-- **Пайплайн:** `BM25` (лексика) + `RoSBERTa` + `e5-large` (семантика) → слияние
+- **Пайплайн:** `BM25` (лексика) + `RoSBERTa` (русская dense-модель)+ `e5-large` (многоязычная dene модель) → слияние
   **RRF** → **cross-encoder reranker** (`bge-reranker-v2-m3`, реранк по лучшему чанку).
-- **Дообучение (главный вклад, +0.095 к тесту):** все три нейросети дообучены
+- **Дообучение (главный вклад, +0.089 к тесту):** все три нейросети дообучены
   **LoRA-супервизно** на размеченных парах `запрос → правильная статья` из
   `calibration.f`. Валидация — честный сплит dev-400 / test-100.
 - **Анализ ошибок** (`notebooks/03_hybrid_analysis.ipynb`, `04_multianswer.ipynb`):
@@ -84,7 +84,7 @@ python scripts/build_answer_ft.py      # -> answer.csv
 python scripts/train_dense.py --model intfloat/multilingual-e5-large --epochs 1 --batch_size 4
 python scripts/train_dense.py --model ai-forever/ru-en-RoSBERTa      --epochs 1 --batch_size 4
 # 2. reranker на dev-400 (эпоха 3)
-python scripts/train_reranker.py --epochs 3 --batch_size 8
+python scripts/train_reranker.py --epochs 3 --batch_size 4
 # 3. генерация ответа
 python scripts/build_answer_ft.py
 ```
