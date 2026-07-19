@@ -86,7 +86,7 @@ python scripts/train_dense.py --model ai-forever/ru-en-RoSBERTa      --epochs 1 
 # 2. reranker на dev-400 (эпоха 3)
 python scripts/train_reranker.py --epochs 3 --batch_size 4
 # 3. генерация ответа
-python scripts/build_answer_ft.py
+python scripts/build_answer_ft.py --local
 ```
 
 Модели сохранятся в `.emb_cache/*_ftsup` и `.emb_cache/bge-reranker-v2-m3_ft`,
